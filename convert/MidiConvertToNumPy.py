@@ -44,7 +44,7 @@ class MidiConvertToNumPy(AbstractConverter.AbstractConverter):
             measure = self.get_measure(start)
             for note in bass.notes:
                 if note.start >= self.get_measure_sec() * (measure - 1):
-                    return self.get_root_pitch(note.pitch)
+                    return AbstractConverter.get_root_pitch(note.pitch)
 
         return -1
 
@@ -72,6 +72,3 @@ class MidiConvertToNumPy(AbstractConverter.AbstractConverter):
                 return inst
 
         return None
-
-    def get_root_pitch(self, pitch):
-        return pitch % 12
