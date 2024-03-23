@@ -1,15 +1,12 @@
-import convert.MidiConvertToNumPy as midiNum
-import convert.ChangingKey as changeKey
-import numpy as np
-datasets = "data/JazzMidi/"
+import transformer.AyatoTransFormer as atf
+import os
 
+from transformer.AyatoTransFormer import AyatoModel
 
-converter = midiNum.MidiConvertToNumPy(datasets + "55Dive.mid")
-numpy_data = converter.convert()
-change = changeKey.ChangingKey(datasets + "55Dive.mid", numpy_data)
-change.set_convert_key("C")
-numpy_data = change.convert()
+directory = "output/np/JazzMidi/"
+datasets = os.listdir(directory)
+train_data = atf.set_train_data(directory, datasets)
 
-np.set_printoptions(precision=2, suppress=True)
-print(numpy_data[0])
+model = atf.train(train_data, 128)
 
+print(train_data.get_data()[0])

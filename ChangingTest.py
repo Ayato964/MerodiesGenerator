@@ -1,4 +1,5 @@
-import convert.ChangingKey as change
 
-datasets = "data/JazzMidi/"
-pitches = change.ChangingKey(datasets + "55Dive.mid")
+import os
+
+d = os.listdir("output/np/JazzMidi")
+print(len(d))
