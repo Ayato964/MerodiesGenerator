@@ -15,9 +15,9 @@ class MidiConvertToNumPy(AbstractConverter.AbstractConverter):
         i = 0
         for prog_inst in prog_inst:
             if prog_inst is not None:
-                #write = midi.PrettyMIDI()
-                #write.instruments.append(prog_inst)
-                #write.write(f"output/temp{i}.mid")
+                write = midi.PrettyMIDI()
+                write.instruments.append(prog_inst)
+                write.write(f"output/temp{i}.mid")
                 new_notes = self.get_convert_note_to_numpy(prog_inst.notes)
                 np_notes.append(np.array(new_notes))
                 i += 1
