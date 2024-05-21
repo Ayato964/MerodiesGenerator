@@ -93,7 +93,7 @@ class AyatoDataSet(Dataset):
         encoding = self.tokenizer.encode_plus(input_text, add_special_tokens=True, padding='max_length',
                                               max_length=128,
                                               truncation=True, return_attention_mask=True)
-        print(sample)
+       # print(sample)
         input_ids = torch.tensor(encoding['input_ids'], dtype=torch.long).to(device)
         attention_mask = torch.tensor(encoding['attention_mask'], dtype=torch.long).to(device)
         target = torch.tensor(sample, dtype=torch.float32).to(device)

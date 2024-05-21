@@ -1,3 +1,7 @@
+"""
+ このクラスでは、main.pyで生成されたモデルをロードし、そのモデルのテストを行っている。
+　ここで行っているテストとは、シードとなる前処理されたデータセットをモデルに読み込み、その続きを生成させるテストである。
+"""
 import torch
 import transformer.AyatoTransFormer as atf
 import convert.MidiConvertToNumPy as midiNum
