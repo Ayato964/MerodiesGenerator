@@ -1,8 +1,7 @@
-import convert.MidiConvertToNumPy as midiNum
-import convert.ChangingKey as changeKey
-import numpy as np
+import convert.ConvertMidi as cm
 import os
 
+"""
 datasets = "data/JazzMidi/"
 out = "output/np/JazzMidi/"
 files = os.listdir(datasets)
@@ -13,3 +12,15 @@ for file in files:
         change.set_convert_key("C")
         numpy_data = change.convert()
         np.savez(out + file, *numpy_data)
+
+
+
+"""
+
+datasets = "data/JazzMidi/"
+files = os.listdir(datasets)
+con = cm.ConvertNumPy(datasets + files[0], cm.ConvertProperties().change_key("C"))
+con.convert()
+np_notes = con.get_np_notes()
+
+print(np_notes.size)
