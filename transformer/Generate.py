@@ -19,7 +19,7 @@ class CreatingMelodiesContinuation:
             output_melodies = output_melodies.tolist()
 
             output_melodies = output_melodies + [choice_output]
-            output_melodies = np.array(output_melodies, dtype=float)
+            output_melodies = np.array(output_melodies, dtype=int)
         return output_melodies
 
 

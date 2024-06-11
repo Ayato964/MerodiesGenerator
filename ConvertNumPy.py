@@ -19,8 +19,7 @@ for file in files:
 
 datasets = "data/JazzMidi/"
 files = os.listdir(datasets)
-con = cm.ConvertNumPy(datasets + files[0], cm.ConvertProperties().change_key("C"))
-con.convert()
-np_notes = con.get_np_notes()
-
-print(np_notes.size)
+for file in files:
+    con = cm.ConvertNumPy(datasets + file, cm.ConvertProperties().change_key("C"))
+    con.convert()
+    con.save()

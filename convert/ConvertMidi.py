@@ -68,39 +68,54 @@ class ConvertNumPy:
             print("エラーが発生し、読み込めません。")
 
         np_notes = np.array([[-1, -1, -1, -1, -1, -1, -1]])
-        for inst in self.midi_data.instruments:
-            before: midi.Note = midi.Note(-1, -1, -1, -1)
-            if not inst.is_drum and inst.program in range(1, 10):
-                for note in inst.notes:
-                    pitch = int(note.pitch)  # 音高
+        try:
+            correct_inst_count = 0
+            for inst in self.midi_data.instruments:
+                before: midi.Note = midi.Note(-1, -1, -1, -1)
+                if not inst.is_drum and inst.program in range(1, 10):
+                    correct_inst_count += 1
+                    for note in inst.notes:
+                        pitch = int(note.pitch)  # 音高
 
-                    velocity = int(note.velocity)  # 強さ
+                        velocity = int(note.velocity)  # 強さ
 
-                    duration_int, duration_few = self.split_float_to_ints(note.get_duration())  # 長さ
+                        duration_int, duration_few = self.split_float_to_ints(note.get_duration())  # 長さ
 
-                    begin_time_int, begin_time_few = \
-                        self.split_float_to_ints(self.get_begin_time(before, note))  # 前のノーツからの開始時間
+                        begin_time_int, begin_time_few = \
+                            self.split_float_to_ints(self.get_begin_time(before, note))  # 前のノーツからの開始時間
 
-                    root_note = self.get_root_note(note.start)
+                        root_note = self.get_root_note(note.start)
 
-                    np_notes = np.vstack([np_notes, [int(pitch), int(velocity), duration_int, duration_few,
-                                                     begin_time_int, begin_time_few, root_note]])
-                    before = note  # 次のループまでnoteを保持
-                np_notes = np.vstack([np_notes, [-1, -1, -1, -1, -1, -1, -1]])
-        self.np_note = np_notes
+                        np_notes = np.vstack([np_notes, [int(pitch), int(velocity), duration_int, duration_few,
+                                                         begin_time_int, begin_time_few, root_note]])
+                        before = note  # 次のループまでnoteを保持
+                    np_notes = np.vstack([np_notes, [-1, -1, -1, -1, -1, -1, -1]])
+            self.np_note = np_notes
+            if correct_inst_count <= 0:
+                self.isError = True
+        except AttributeError:
+            print("処理を行う過程でエラーが発生しました。")
+            self.np_note = np.array([[-1, -1, -1, -1, -1, -1, -1]])
+            self.isError = True
 
     def save(self):
-        current_dir = os.path.dirname(os.path.abspath(__file__))
+        if not self.isError:
+            current_dir = os.path.dirname(os.path.abspath(__file__))
 
-        # ルートディレクトリまでの相対パスを計算
-        project_root = os.path.abspath(os.path.join(current_dir, '..'))
+            # ルートディレクトリまでの相対パスを計算
+            project_root = os.path.abspath(os.path.join(current_dir, '..'))
 
-        # ルートディレクトリからoutディレクトリへのパスを生成
-        out_directory = os.path.join(project_root, 'output')
+            # ルートディレクトリからoutディレクトリへのパスを生成
+            out_directory = os.path.join(project_root, 'output')
 
-        split_direc = self.directory.split("/")
+            split_direc = self.directory.split("/")
 
-        np.savez(out_directory + "/np/" + split_direc[1] + "/" + split_direc[-1], *self.np_note)
+            filename = split_direc[-1].split(".")[0]
+
+            np.savez(out_directory + "/np/" + split_direc[1] + "/" + filename, *self.np_note)
+            print("処理が正常に終了しました。")
+        else:
+            print("Transformerが望むデータ形式ではないため、保存ができませんでした。")
 
     def get_np_notes(self):
         return self.np_note
@@ -144,7 +159,7 @@ class ConvertNumPy:
     @staticmethod
     def split_float_to_ints(num):
         if num == -1:
-            return -1
+            return -1, -1
         else:
             # 整数部を取得
             integer_part = int(num)
@@ -157,6 +172,7 @@ class ConvertNumPy:
 
 
 class _ConvertChangeKey(_AbstractConvert):
+    is_Error = False
 
     def __init__(self, conv_key: str):
         self.conv_key_number = self.get_key_number(conv_key)
@@ -166,10 +182,14 @@ class _ConvertChangeKey(_AbstractConvert):
         key = score.analyze("key").tonic.name
         now_key_number = self.get_key_number(key)
         transpose_number = abs(now_key_number - self.conv_key_number)
-        for inst in midi_data.instruments:
-            if not inst.is_drum:
-                for note in inst.notes:
-                    note.pitch -= transpose_number
+        try:
+            for inst in midi_data.instruments:
+                if not inst.is_drum:
+                    for note in inst.notes:
+                        note.pitch -= transpose_number
+        except AttributeError:
+            print(f"{directory}が移調できませんでした。")
+            self.is_Error = True
         pass
 
     @staticmethod
