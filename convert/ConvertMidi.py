@@ -52,7 +52,7 @@ class ConvertNumPy:
 
     def __init__(self, directory: str, conv_list: ConvertProperties):
         self.directory = directory
-        self.conv = conv_list
+        self.conv: ConvertProperties = conv_list
         try:
             self.midi_data = _get_midi_datasets(directory)
         except OSError:
@@ -106,7 +106,7 @@ class ConvertNumPy:
             project_root = os.path.abspath(os.path.join(current_dir, '..'))
 
             # ルートディレクトリからoutディレクトリへのパスを生成
-            out_directory = os.path.join(project_root, 'output')
+            out_directory = os.path.join(project_root, 'out')
 
             split_direc = self.directory.split("/")
 
@@ -159,7 +159,7 @@ class ConvertNumPy:
     @staticmethod
     def split_float_to_ints(num):
         if num == -1:
-            return -1, -1
+            return -1
         else:
             # 整数部を取得
             integer_part = int(num)

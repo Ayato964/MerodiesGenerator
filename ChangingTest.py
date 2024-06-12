@@ -1,5 +1,5 @@
 
 import os
+import torch
 
-d = os.listdir("output/np/JazzMidi")
-print(len(d))
+print(torch.cuda.is_available())

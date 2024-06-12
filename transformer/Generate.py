@@ -1,25 +1,28 @@
 import random
-from abc import abstractmethod
 import numpy as np
 import torch
-from transformer.AyatoTransFormer import AyatoModel, AyatoDataSet
-
+from transformers import BertTokenizer
+from transformer.AyatoTransFormer import AyatoModel
 
 class CreatingMelodiesContinuation:
 
+    def __init__(self):
+        self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+
     def generate(self, input_melodies, generate_time, model):
         output_melodies = input_melodies
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
         for _ in range(generate_time):
-            tenser = torch.tensor(output_melodies, dtype=torch.long)
-            model_output = model(tenser, attention_mask=None).detach()
-            model_output_np = model_output.numpy()
-            choice_output = np.array(random.choice(model_output_np))
+            input_text = ' '.join(map(str, output_melodies[-10:]))
+            encoding = self.tokenizer.encode_plus(input_text, add_special_tokens=True, padding='max_length',
+                                                  max_length=128, truncation=True, return_attention_mask=True)
+            input_ids = torch.tensor(encoding['input_ids'], dtype=torch.long).unsqueeze(0).to(device)
+            attention_mask = torch.tensor(encoding['attention_mask'], dtype=torch.long).unsqueeze(0).to(device)
 
-            choice_output = choice_output.tolist()
-            output_melodies = output_melodies.tolist()
+            model_output = model(input_ids, attention_mask=attention_mask).detach().cpu().numpy()
+            choice_output = np.round(model_output[0]).astype(int)  # 四捨五入して整数に変換
 
-            output_melodies = output_melodies + [choice_output]
-            output_melodies = np.array(output_melodies, dtype=int)
+            output_melodies = np.append(output_melodies, [choice_output], axis=0)
+
         return output_melodies
-
-

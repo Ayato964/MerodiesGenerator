@@ -3,7 +3,7 @@ import os
 
 """
 datasets = "data/JazzMidi/"
-out = "output/np/JazzMidi/"
+out = "out/np/JazzMidi/"
 files = os.listdir(datasets)
 for file in files:
     converter = midiNum.MidiConvertToNumPy(datasets + "/" + file)
