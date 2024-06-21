@@ -39,6 +39,10 @@ class ConvertProperties:
         self._conv_list.add(_ConvertChangeKey(key))
         return self
 
+    def sort(self):
+        self._conv_list.add(_Sort())
+        return self
+
     def convert(self, directory, midi_data):
         for i in range(self._conv_list.size()):
             self._conv_list.get(i).convert(directory, midi_data)
@@ -67,11 +71,11 @@ class ConvertNumPy:
         else:
             print("エラーが発生し、読み込めません。")
 
-        np_notes = np.array([[-1, -1, -1, -1, -1, -1, -1]])
+        np_notes = np.array([[0, 0, 0, 0, 0, 0, 0]])
         try:
             correct_inst_count = 0
             for inst in self.midi_data.instruments:
-                before: midi.Note = midi.Note(-1, -1, -1, -1)
+                before: midi.Note = midi.Note(0, 0, 0, 0)
                 if not inst.is_drum and inst.program in range(1, 10):
                     correct_inst_count += 1
                     for note in inst.notes:
@@ -89,11 +93,15 @@ class ConvertNumPy:
                         np_notes = np.vstack([np_notes, [int(pitch), int(velocity), duration_int, duration_few,
                                                          begin_time_int, begin_time_few, root_note]])
                         before = note  # 次のループまでnoteを保持
-                    np_notes = np.vstack([np_notes, [-1, -1, -1, -1, -1, -1, -1]])
+                    np_notes = np.vstack([np_notes, [0, 0, 0, 0, 0, 0, 0]])
             self.np_note = np_notes
             if correct_inst_count <= 0:
                 self.isError = True
         except AttributeError:
+            print("処理を行う過程でエラーが発生しました。")
+            self.np_note = np.array([[-1, -1, -1, -1, -1, -1, -1]])
+            self.isError = True
+        except TypeError:
             print("処理を行う過程でエラーが発生しました。")
             self.np_note = np.array([[-1, -1, -1, -1, -1, -1, -1]])
             self.isError = True
@@ -127,6 +135,7 @@ class ConvertNumPy:
     def get_root_note(self, start: float) -> int:
         bass = self.get_bass()
         if bass is None:
+            self.isError = True
             return -1
         else:
             measure = self.get_measure(start)
@@ -134,6 +143,7 @@ class ConvertNumPy:
                 if note.start >= self.get_measure_sec() * (measure - 1):
                     return self.get_root_pitch(note.pitch)
 
+            self.isError = True
             return -1
 
     def get_bass(self):
@@ -154,7 +164,7 @@ class ConvertNumPy:
 
     @staticmethod
     def get_begin_time(before: midi.Note, notes: midi.Note) -> float:
-        return notes.start - before.end if before.start != -1000 else -1
+        return notes.start - before.start
 
     @staticmethod
     def split_float_to_ints(num):
@@ -166,9 +176,25 @@ class ConvertNumPy:
 
             # 少数部を取得し、整数部に変換
             decimal_part_as_str = str(num).split('.')[1]
-            decimal_part_as_int = int(decimal_part_as_str)
+            decimal_part_as_int = int(decimal_part_as_str[0:3])
 
             return integer_part, decimal_part_as_int
+
+
+class _Sort(_AbstractConvert):
+
+    def convert(self, directory: str, midi_data: PrettyMIDI):
+        try:
+            for inst in midi_data.instruments:
+                ins: midi.Instrument = inst
+
+                if not ins.is_drum and inst.program in range(1, 10):
+                    ins.notes = sorted(ins.notes, key=lambda note: note.start)
+                    pass
+            pass
+        except AttributeError:
+            print("謎のエラー")
+
 
 
 class _ConvertChangeKey(_AbstractConvert):

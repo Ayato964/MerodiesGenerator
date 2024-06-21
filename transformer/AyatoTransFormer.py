@@ -6,6 +6,10 @@ import torch.nn as nn
 from transformers import BertModel
 import numpy as np
 
+import constants
+from .PositionalEncoding import PositionalEncoding
+
+
 IS_DEBUG = False
 
 
@@ -46,15 +50,19 @@ def train(ayato_dataset, num_epochs):
     for epoch in range(num_epochs):
         print(f"epoch {epoch} start....")
         print(f"batch size :{len(loader)}")
+        count = 0
         for batch in loader:
             batch_start = time.time()
             input_ids, attention_mask, targets = batch
             optimizer.zero_grad()
-            outputs = model(input_ids, attention_mask=attention_mask)
-            loss = criterion(outputs, targets.float())
-            loss.backward()
-            optimizer.step()
-        print(f'Epoch {epoch + 1}, Loss: {loss.item()}')
+            for input in input_ids:
+                outputs = model(input, attention_mask=attention_mask)
+#                loss = criterion(outputs, targets.float())
+#                loss.backward()
+                optimizer.step()
+            print(f"batch count:{count}")
+            count += 1
+       # print(f'Epoch {epoch + 1}, Loss: {loss.item()}')
     return model
 
 
@@ -62,22 +70,60 @@ device = get_device()
 
 
 class AyatoModel(nn.Module):
-    def __init__(self):
+    def __init__(self, trans_layer=6, num_heads=8, d_model=512, dim_feedforward=1024):
         super(AyatoModel, self).__init__()
-        self.bert = BertModel.from_pretrained('bert-base-uncased')
-        self.fc = nn.Linear(self.bert.config.hidden_size, 7)  # 出力次元を9に設定
 
-    def forward(self, input_ids, attention_mask):
-        outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
-        pooler_output = outputs.pooler_output
-        outputs = self.fc(pooler_output)
+        self.trans_layer = trans_layer
+        self.num_heads = num_heads
+        self.d_model = d_model
+        self.dim_feedforward = dim_feedforward
+
+        #位置エンコーディングを作成
+        self.positional: PositionalEncoding = PositionalEncoding(self.d_model, 0.1, 2048)
+        #Transformerの設定
+        self.transformer: nn.Transformer = nn.Transformer(d_model=self.d_model, nhead=num_heads,  #各種パラメーターの設計
+                                                          num_encoder_layers=self.trans_layer, num_decoder_layers=0,
+                                                          dropout=0.1, dim_feedforward=dim_feedforward)
+
+
+        self.fc = nn.Linear(self.d_model, constants.VOCAB_SIZE)  # 出力次元を7に設定
+
+        self.embedding = nn.Embedding(constants.VOCAB_SIZE, self.d_model)
+
+    def forward(self, inputs, attention_mask):
+        mask = self.transformer.generate_square_subsequent_mask(inputs.shape[0]).to(device)
+
+        # デバッグ用にインデックスの範囲を確認する
+        #print(f"Inputs min: {inputs.min()}, max: {inputs.max()}")
+
+        # 埋め込み層の定義時のnum_embeddingsと一致しているか確認
+        #print(f"Embedding layer num_embeddings: {self.embedding.num_embeddings}")
+
+        inputs_em: nn.Embedding = self.embedding(inputs)
+        inputs_pos = self.positional(inputs_em)
+        outputs = self.transformer.encoder(inputs_pos)
+        outputs = self.fc(outputs)
         return outputs
+
+    def generate(self, input_seq, max_length=50):
+        self.eval()  # モデルを評価モードに切り替え
+        generated_seq = list(input_seq)  # 生成シーケンスをリストとして初期化
+        input_tensor = torch.tensor(input_seq, dtype=torch.long).to(device).unsqueeze(1)  # シーケンスをテンソルに変換し、バッチ次元を追加
+        attention_mask = torch.ones(input_tensor.shape, dtype=torch.long).to(device)  # 注意マスクを作成
+
+        with torch.no_grad():  # 勾配計算を無効化（推論モード）
+            for _ in range(max_length):
+                outputs = self(input_tensor, attention_mask)  # モデルの出力を取得
+                next_token = outputs[-1, :, :].argmax(dim=-1)  # 最新のトークンのスコアから次のトークンを選択
+                generated_seq.append(next_token.item())  # 生成シーケンスに次のトークンを追加
+                input_tensor = torch.cat((input_tensor, next_token.unsqueeze(0)), dim=0)  # 新しいトークンを入力テンソルに追加
+
+        return generated_seq  # 生成されたシーケンスを返す
 
 
 class AyatoDataSet(Dataset):
     def __init__(self):
         self.data = []
-        self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 
     def __len__(self):
         return len(self.data)
@@ -86,23 +132,9 @@ class AyatoDataSet(Dataset):
         sample = self.data[item]
         input_data = sample['input']
         target_data = sample['target']
-        input_text = ' '.join(map(str, input_data))
-        encoding = self.tokenizer.encode_plus(input_text, add_special_tokens=True, padding='max_length',
-                                              max_length=128, truncation=True, return_attention_mask=True)
-        input_ids = torch.tensor(encoding['input_ids'], dtype=torch.long).to(device)
-        attention_mask = torch.tensor(encoding['attention_mask'], dtype=torch.long).to(device)
-        target = torch.tensor(target_data, dtype=torch.float).to(device)
-        return input_ids, attention_mask, target
+        input_data = torch.tensor(input_data, dtype=torch.int).to(device)
+        target = torch.tensor(target_data, dtype=torch.int).to(device)
+        return input_data, 0, target
 
     def add_data(self, input_data, target_data):
         self.data.append({'input': input_data, 'target': target_data})
-
-''''
-# トレーニングデータの読み込みとトレーニングの実行
-directory = 'your_directory_path/'
-datasets = ['your_dataset_file.npz']
-train_data = set_train_data(directory, datasets)
-num_epochs = 10
-trained_model = train(train_data, num_epochs)
-'''
-

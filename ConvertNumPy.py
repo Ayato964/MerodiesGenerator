@@ -19,7 +19,10 @@ for file in files:
 
 datasets = "data/JazzMidi/"
 files = os.listdir(datasets)
+
+
+
 for file in files:
-    con = cm.ConvertNumPy(datasets + file, cm.ConvertProperties().change_key("C"))
+    con = cm.ConvertNumPy(datasets + file, cm.ConvertProperties().change_key("C").sort())
     con.convert()
     con.save()
