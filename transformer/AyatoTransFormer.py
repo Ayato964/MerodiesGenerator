@@ -1,5 +1,8 @@
 import time
+
+import numpy
 import torch
+from torch import Tensor
 from torch.utils.data import Dataset, DataLoader
 from transformers import BertTokenizer
 import torch.nn as nn
@@ -43,8 +46,8 @@ def train(ayato_dataset, num_epochs):
     start = time.time()
     loader = DataLoader(ayato_dataset, batch_size=64, shuffle=True, pin_memory=False)
     print("Creating Model....")
-    model = AyatoModel().to(get_device())
-    criterion = nn.MSELoss().to(get_device())
+    model = AyatoModel().to(device)
+    criterion = nn.MSELoss().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
     print("Start training...")
     for epoch in range(num_epochs):
@@ -53,7 +56,7 @@ def train(ayato_dataset, num_epochs):
         count = 0
         for batch in loader:
             batch_start = time.time()
-            input_ids, attention_mask, targets = batch
+            input_ids, attention_mask, targets = [x.to(device) for x in batch]
             optimizer.zero_grad()
             for input in input_ids:
                 outputs = model(input, attention_mask=attention_mask)
@@ -79,45 +82,51 @@ class AyatoModel(nn.Module):
         self.dim_feedforward = dim_feedforward
 
         #位置エンコーディングを作成
-        self.positional: PositionalEncoding = PositionalEncoding(self.d_model, 0.1, 2048)
+        self.positional: PositionalEncoding = PositionalEncoding(self.d_model, 0.1, 2048).to(device)
         #Transformerの設定
         self.transformer: nn.Transformer = nn.Transformer(d_model=self.d_model, nhead=num_heads,  #各種パラメーターの設計
                                                           num_encoder_layers=self.trans_layer, num_decoder_layers=0,
-                                                          dropout=0.1, dim_feedforward=dim_feedforward)
+                                                          dropout=0.1, dim_feedforward=dim_feedforward).to(device)
 
+        self.fc: nn.Linear = nn.Linear(self.d_model, constants.VOCAB_SIZE).to(device)  # 出力次元を7に設定
 
-        self.fc = nn.Linear(self.d_model, constants.VOCAB_SIZE)  # 出力次元を7に設定
-
-        self.embedding = nn.Embedding(constants.VOCAB_SIZE, self.d_model)
+        self.embedding: nn.Embedding = nn.Embedding(constants.VOCAB_SIZE, self.d_model).to(device)
 
     def forward(self, inputs, attention_mask):
         mask = self.transformer.generate_square_subsequent_mask(inputs.shape[0]).to(device)
-
-        # デバッグ用にインデックスの範囲を確認する
-        #print(f"Inputs min: {inputs.min()}, max: {inputs.max()}")
-
-        # 埋め込み層の定義時のnum_embeddingsと一致しているか確認
-        #print(f"Embedding layer num_embeddings: {self.embedding.num_embeddings}")
 
         inputs_em: nn.Embedding = self.embedding(inputs)
         inputs_pos = self.positional(inputs_em)
         outputs = self.transformer.encoder(inputs_pos)
         outputs = self.fc(outputs)
+
         return outputs
 
+
     def generate(self, input_seq, max_length=50):
-        self.eval()  # モデルを評価モードに切り替え
-        generated_seq = list(input_seq)  # 生成シーケンスをリストとして初期化
-        input_tensor = torch.tensor(input_seq, dtype=torch.long).to(device).unsqueeze(1)  # シーケンスをテンソルに変換し、バッチ次元を追加
-        attention_mask = torch.ones(input_tensor.shape, dtype=torch.long).to(device)  # 注意マスクを作成
+        self.eval()
 
-        with torch.no_grad():  # 勾配計算を無効化（推論モード）
-            for _ in range(max_length):
-                outputs = self(input_tensor, attention_mask)  # モデルの出力を取得
-                next_token = outputs[-1, :, :].argmax(dim=-1)  # 最新のトークンのスコアから次のトークンを選択
-                generated_seq.append(next_token.item())  # 生成シーケンスに次のトークンを追加
-                input_tensor = torch.cat((input_tensor, next_token.unsqueeze(0)), dim=0)  # 新しいトークンを入力テンソルに追加
+        generated_seq = np.array([input_seq])
 
+        if max_length >= 1:
+            input_tensor = torch.tensor(input_seq, dtype=torch.long).to(device).unsqueeze(1)  # シーケンスをテンソルに変換し、バッチ次元を追加
+            attention_mask = torch.ones(input_tensor.shape, dtype=torch.long).to(device)  # 注意マスクを作成
+            score = self(input_tensor, attention_mask)
+
+            print(f"Score shape is {score.shape}")
+
+            output_node: Tensor = torch.argmax(score, dim=-1).view(-1)
+            print(score[0, 0, output_node[0]])
+            output_node_copy = output_node.to('cpu')
+            generated_seq = np.concatenate((generated_seq, [output_node_copy]), axis=0)
+
+            print(f"output node:{output_node.squeeze().tolist()}")
+            with torch.no_grad():# 勾配計算を無効化（推論モード）
+                for _ in range(max_length - 1):
+                    score = self(output_node, attention_mask)
+                    output_node = self.get_node_by_score(score)
+                    generated_seq = np.concatenate((generated_seq, [output_node]), axis=0)
+                pass
         return generated_seq  # 生成されたシーケンスを返す
 
 

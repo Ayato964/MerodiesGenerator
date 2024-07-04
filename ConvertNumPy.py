@@ -13,8 +13,6 @@ for file in files:
         numpy_data = change.convert()
         np.savez(out + file, *numpy_data)
 
-
-
 """
 
 datasets = "data/JazzMidi/"

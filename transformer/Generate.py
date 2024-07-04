@@ -4,6 +4,7 @@ import torch
 from transformers import BertTokenizer
 from transformer.AyatoTransFormer import AyatoModel
 
+
 class CreatingMelodiesContinuation:
 
     def __init__(self):
