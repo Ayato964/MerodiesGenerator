@@ -4,11 +4,13 @@ from transformer.AyatoTransFormer import AyatoModel
 import convert.ConvertMidi as cm
 
 model_directory = "out/model/"
-model = AyatoModel()
-model.load_state_dict(torch.load(model_directory + "JazzAI.0.4.3.1_20240703.pth"))
+model = AyatoModel(d_model=128,
+                   position_length=512,
+                   trans_layer=3)
+model.load_state_dict(torch.load(model_directory + "AyatoModel.0.5.1_20240705.pth"))
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model.to(device)
-
+print("HEEEE")
 # メロディ生成の実行
 direct = "data/JazzMidi/2ndMovementOfSinisterFootwear.mid"
 conv = cm.ConvertNumPy(direct, cm.ConvertProperties().change_key("C").sort())

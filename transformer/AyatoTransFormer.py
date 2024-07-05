@@ -12,7 +12,6 @@ import numpy as np
 import constants
 from .PositionalEncoding import PositionalEncoding
 
-
 IS_DEBUG = False
 
 
@@ -42,30 +41,39 @@ def set_train_data(directory, datasets):
     return None
 
 
-def train(ayato_dataset, num_epochs):
+def train(ayato_dataset, num_epochs, trans_layer=6, num_heads=8, d_model=512, dim_feedforward=1024, dropout=0.1,
+          position_length=2048):
     start = time.time()
     loader = DataLoader(ayato_dataset, batch_size=64, shuffle=True, pin_memory=False)
     print("Creating Model....")
-    model = AyatoModel().to(device)
-    criterion = nn.MSELoss().to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+    model = AyatoModel(trans_layer=trans_layer, num_heads=num_heads,
+                       d_model=d_model, dim_feedforward=dim_feedforward,
+                       dropout=dropout, position_length=position_length).to(device)
+
+    criterion = nn.CrossEntropyLoss()  # 損失関数を定義
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)  # オプティマイザを定義
+
+
     print("Start training...")
     for epoch in range(num_epochs):
-        print(f"epoch {epoch} start....")
+        print(f"epoch {epoch + 1} start....")
         print(f"batch size :{len(loader)}")
         count = 0
+        loss = None
         for batch in loader:
-            batch_start = time.time()
             input_ids, attention_mask, targets = [x.to(device) for x in batch]
-            optimizer.zero_grad()
-            for input in input_ids:
-                outputs = model(input, attention_mask=attention_mask)
-#                loss = criterion(outputs, targets.float())
-#                loss.backward()
-                optimizer.step()
-            print(f"batch count:{count}")
+
+            optimizer.zero_grad()  # 勾配を初期化
+            outputs = model(input_ids, attention_mask=attention_mask)
+
+            outputs = outputs.view(-1, outputs.size(-1))
+            targets = targets.view(-1).long()
+
+            loss = criterion(outputs, targets)  # 損失を計算
+            loss.backward()  # 逆伝播
+            optimizer.step()  # オプティマイザを更新
             count += 1
-       # print(f'Epoch {epoch + 1}, Loss: {loss.item()}')
+        print(f"Epoch [{epoch+1}/{num_epochs}],  Loss: {loss.item():.4f}")
     return model
 
 
@@ -73,35 +81,50 @@ device = get_device()
 
 
 class AyatoModel(nn.Module):
-    def __init__(self, trans_layer=6, num_heads=8, d_model=512, dim_feedforward=1024):
+    def __init__(self, trans_layer=6, num_heads=8, d_model=512, dim_feedforward=1024, dropout=0.1,
+                 position_length=2048):
         super(AyatoModel, self).__init__()
 
+        self.dummy = DummyDecoder()
         self.trans_layer = trans_layer
         self.num_heads = num_heads
         self.d_model = d_model
         self.dim_feedforward = dim_feedforward
+        self.dropout = dropout
 
         #位置エンコーディングを作成
-        self.positional: PositionalEncoding = PositionalEncoding(self.d_model, 0.1, 2048).to(device)
+        self.positional: PositionalEncoding = PositionalEncoding(self.d_model, dropout, position_length).to(device)
         #Transformerの設定
         self.transformer: nn.Transformer = nn.Transformer(d_model=self.d_model, nhead=num_heads,  #各種パラメーターの設計
                                                           num_encoder_layers=self.trans_layer, num_decoder_layers=0,
-                                                          dropout=0.1, dim_feedforward=dim_feedforward).to(device)
+                                                          dropout=self.dropout, dim_feedforward=dim_feedforward,
+                                                          custom_decoder=self.dummy
+                                                          ).to(device)
 
-        self.fc: nn.Linear = nn.Linear(self.d_model, constants.VOCAB_SIZE).to(device)  # 出力次元を7に設定
+        self.fc: nn.Linear = nn.Linear(self.d_model, constants.VOCAB_SIZE).to(device)
 
         self.embedding: nn.Embedding = nn.Embedding(constants.VOCAB_SIZE, self.d_model).to(device)
 
     def forward(self, inputs, attention_mask):
-        mask = self.transformer.generate_square_subsequent_mask(inputs.shape[0]).to(device)
+        mask = self.transformer.generate_square_subsequent_mask(inputs.shape[1]).to(get_device())
 
         inputs_em: nn.Embedding = self.embedding(inputs)
+
+        #print(f"inputs EM: {inputs_em.shape}")
+
+        inputs_em = inputs_em.permute(1, 0, 2)
+
+        #print(f"inputs EM Permute: {inputs_em.shape}")
+
         inputs_pos = self.positional(inputs_em)
-        outputs = self.transformer.encoder(inputs_pos)
-        outputs = self.fc(outputs)
 
-        return outputs
+        #print(f"positional inputs: {inputs_em.shape}")
 
+        outputs = self.transformer(src=inputs_pos, tgt=inputs_pos, src_mask=mask, tgt_mask=mask)
+        outputs = outputs.permute(1, 0, 2)
+        score = self.fc(outputs)
+
+        return score
 
     def generate(self, input_seq, max_length=50):
         self.eval()
@@ -121,7 +144,7 @@ class AyatoModel(nn.Module):
             generated_seq = np.concatenate((generated_seq, [output_node_copy]), axis=0)
 
             print(f"output node:{output_node.squeeze().tolist()}")
-            with torch.no_grad():# 勾配計算を無効化（推論モード）
+            with torch.no_grad():  # 勾配計算を無効化（推論モード）
                 for _ in range(max_length - 1):
                     score = self(output_node, attention_mask)
                     output_node = self.get_node_by_score(score)
@@ -147,3 +170,13 @@ class AyatoDataSet(Dataset):
 
     def add_data(self, input_data, target_data):
         self.data.append({'input': input_data, 'target': target_data})
+
+
+class DummyDecoder(nn.Module):
+    def __init__(self):
+        super(DummyDecoder, self).__init__()
+
+    def forward(self, tgt, memory, tgt_mask, memory_mask,tgt_key_padding_mask,memory_key_padding_mask, **kwargs):
+
+        return memory
+    pass
