@@ -126,31 +126,34 @@ class AyatoModel(nn.Module):
 
         return score
 
+
     def generate(self, input_seq, max_length=50):
         self.eval()
 
-        generated_seq = np.array([input_seq])
+        generated_seq = torch.tensor([input_seq], dtype=torch.long).to(device)
+        print(f"first{generated_seq}")
+        with torch.no_grad():
+            for i in range(max_length):
+                attention_mask = torch.ones(generated_seq.shape, dtype=torch.long).to(device)  # 注意マスクを作成
+                score = self(generated_seq, attention_mask)
 
-        if max_length >= 1:
-            input_tensor = torch.tensor(input_seq, dtype=torch.long).to(device).unsqueeze(1)  # シーケンスをテンソルに変換し、バッチ次元を追加
-            attention_mask = torch.ones(input_tensor.shape, dtype=torch.long).to(device)  # 注意マスクを作成
-            score = self(input_tensor, attention_mask)
+                #print(f"Score shape is {score.shape}")
 
-            print(f"Score shape is {score.shape}")
+                output_node: Tensor = torch.argmax(score, dim=-1).view(-1).unsqueeze(0).to(device)
 
-            output_node: Tensor = torch.argmax(score, dim=-1).view(-1)
-            print(score[0, 0, output_node[0]])
-            output_node_copy = output_node.to('cpu')
-            generated_seq = np.concatenate((generated_seq, [output_node_copy]), axis=0)
+                #print(f"output{i} :{output_node}")
 
-            print(f"output node:{output_node.squeeze().tolist()}")
-            with torch.no_grad():  # 勾配計算を無効化（推論モード）
-                for _ in range(max_length - 1):
-                    score = self(output_node, attention_mask)
-                    output_node = self.get_node_by_score(score)
-                    generated_seq = np.concatenate((generated_seq, [output_node]), axis=0)
-                pass
-        return generated_seq  # 生成されたシーケンスを返す
+                if output_node.shape != torch.Size([1, 7]):
+                    output_node = output_node.view(-1, 7)[-1, :].unsqueeze(0).to(device)
+
+                #print(f"out edit {i} : {output_node}")
+
+                generated_seq = torch.cat((generated_seq, output_node), dim=0).to(device)
+
+                #print(f"Count{i} : {generated_seq}")
+
+        print(f"Finally:{generated_seq}")
+        return generated_seq.tolist()  # 生成されたシーケンスを返す
 
 
 class AyatoDataSet(Dataset):

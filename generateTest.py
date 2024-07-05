@@ -19,6 +19,6 @@ np_notes = conv.get_np_notes()[0:10]
 
 # 生成されたシーケンスの確認
 seed = np_notes[1]
-gene = model.generate(seed, max_length=1)
+gene = model.generate(seed, max_length=10)
 
 print(gene)
