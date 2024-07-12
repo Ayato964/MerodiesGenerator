@@ -1,3 +1,4 @@
+import random
 import time
 
 import numpy
@@ -34,6 +35,7 @@ def set_train_data(directory, datasets):
                 input_data = np_load_data[f'arr_{i}']
                 target_data = np_load_data[f'arr_{i + 1}']
                 t_data.add_data(input_data, target_data)
+        print(f"Token size: {len(t_data.data)}")
         return t_data
     else:
         np_load_data = np.load(directory + datasets[0])
@@ -44,7 +46,7 @@ def set_train_data(directory, datasets):
 def train(ayato_dataset, num_epochs, trans_layer=6, num_heads=8, d_model=512, dim_feedforward=1024, dropout=0.1,
           position_length=2048):
     start = time.time()
-    loader = DataLoader(ayato_dataset, batch_size=64, shuffle=True, pin_memory=False)
+    loader = DataLoader(ayato_dataset, batch_size=512, shuffle=False, pin_memory=False)
     print("Creating Model....")
     model = AyatoModel(trans_layer=trans_layer, num_heads=num_heads,
                        d_model=d_model, dim_feedforward=dim_feedforward,
@@ -53,13 +55,14 @@ def train(ayato_dataset, num_epochs, trans_layer=6, num_heads=8, d_model=512, di
     criterion = nn.CrossEntropyLoss()  # 損失関数を定義
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)  # オプティマイザを定義
 
-
     print("Start training...")
+    loss_val = None
     for epoch in range(num_epochs):
         print(f"epoch {epoch + 1} start....")
         print(f"batch size :{len(loader)}")
         count = 0
         loss = None
+        model.train()
         for batch in loader:
             input_ids, attention_mask, targets = [x.to(device) for x in batch]
 
@@ -74,7 +77,8 @@ def train(ayato_dataset, num_epochs, trans_layer=6, num_heads=8, d_model=512, di
             optimizer.step()  # オプティマイザを更新
             count += 1
         print(f"Epoch [{epoch+1}/{num_epochs}],  Loss: {loss.item():.4f}")
-    return model
+        loss_val = loss.item()
+    return model, loss_val
 
 
 device = get_device()
@@ -101,11 +105,14 @@ class AyatoModel(nn.Module):
                                                           custom_decoder=self.dummy
                                                           ).to(device)
 
-        self.fc: nn.Linear = nn.Linear(self.d_model, constants.VOCAB_SIZE).to(device)
+        self.Wout = nn.Linear(self.d_model, constants.VOCAB_SIZE).to(device)
 
         self.embedding: nn.Embedding = nn.Embedding(constants.VOCAB_SIZE, self.d_model).to(device)
 
+        self.softmax: nn.Softmax = nn.Softmax(dim=-1)
+
     def forward(self, inputs, attention_mask):
+
         mask = self.transformer.generate_square_subsequent_mask(inputs.shape[1]).to(get_device())
 
         inputs_em: nn.Embedding = self.embedding(inputs)
@@ -122,37 +129,30 @@ class AyatoModel(nn.Module):
 
         outputs = self.transformer(src=inputs_pos, tgt=inputs_pos, src_mask=mask, tgt_mask=mask)
         outputs = outputs.permute(1, 0, 2)
-        score = self.fc(outputs)
+        score = self.Wout(outputs)
 
         return score
 
 
     def generate(self, input_seq, max_length=50):
         self.eval()
+        generated_seq = torch.tensor(input_seq, dtype=torch.long).to(device)
 
-        generated_seq = torch.tensor([input_seq], dtype=torch.long).to(device)
         print(f"first{generated_seq}")
-        with torch.no_grad():
+
+        with torch.set_grad_enabled(False):
             for i in range(max_length):
-                attention_mask = torch.ones(generated_seq.shape, dtype=torch.long).to(device)  # 注意マスクを作成
-                score = self(generated_seq, attention_mask)
+                score: torch.Tensor = self.softmax(self(generated_seq, 0))
 
-                #print(f"Score shape is {score.shape}")
+                next_token_score: torch.Tensor = score[-1, :, :]
+                next_token_score.flatten()
 
-                output_node: Tensor = torch.argmax(score, dim=-1).view(-1).unsqueeze(0).to(device)
-
-                #print(f"output{i} :{output_node}")
-
-                if output_node.shape != torch.Size([1, 7]):
-                    output_node = output_node.view(-1, 7)[-1, :].unsqueeze(0).to(device)
-
-                #print(f"out edit {i} : {output_node}")
+                dis = torch.distributions.categorical.Categorical(probs=next_token_score)
+                output_node = dis.sample().unsqueeze(0)
 
                 generated_seq = torch.cat((generated_seq, output_node), dim=0).to(device)
 
-                #print(f"Count{i} : {generated_seq}")
-
-        print(f"Finally:{generated_seq}")
+        #print(f"Finally:{generated_seq}")
         return generated_seq.tolist()  # 生成されたシーケンスを返す
 
 

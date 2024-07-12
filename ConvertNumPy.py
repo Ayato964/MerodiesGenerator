@@ -15,12 +15,12 @@ for file in files:
 
 """
 
-datasets = "data/JazzMidi/"
+datasets = "data/test/"
 files = os.listdir(datasets)
 
 
 
 for file in files:
-    con = cm.ConvertNumPy(datasets + file, cm.ConvertProperties().change_key("C").sort())
+    con = cm.ConvertNumPy(datasets + file, cm.ConvertProperties())
     con.convert()
     con.save()
