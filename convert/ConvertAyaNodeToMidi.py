@@ -15,7 +15,7 @@ def convert(seq: list) -> pm:
     before_time = 0
     for note in seq:
         start = before_time + sum_begin_time(note[4], note[5])
-        inst.notes.append(pm.Note(pitch=note[0], velocity=note[1], start=start, end=start + sum_begin_time(note[2], note[3])))
+        inst.notes.append(pm.Note(pitch=min(note[0], 127), velocity=min(note[1], 127), start=start, end=start + sum_begin_time(note[2], note[3])))
         before_time = start
         pass
 

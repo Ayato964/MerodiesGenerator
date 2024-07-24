@@ -6,19 +6,20 @@ import pretty_midi as pm
 from convert import ConvertAyaNodeToMidi as nm
 import numpy as np
 model_directory = "out/model/"
-model = AyatoModel(  d_model=64,
-                     position_length=128,
-                     dim_feedforward=128,
-                     trans_layer=3,
-                     dropout=0.1)
-model.load_state_dict(torch.load(model_directory + "AyatoModel.0.7.1_2.7787742614746094.pth"))
+model = AyatoModel(
+    d_model=32,
+    dim_feedforward=512,
+    trans_layer=3,
+    position_length=512,
+)
+model.load_state_dict(torch.load(model_directory + "AyatoModel.TEST_3.5490127251066013.pth"))
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model.to(device)
 print("HEEEE")
 # メロディ生成の実行
 #np_notes = np.load("out/np/test/test.npz")
 
-np_notes = np.load("out/np/JazzMidi/2ndMovementOfSinisterFootwear.npz")
+np_notes = np.load("out/np/datasets/55Dive.npz")
 
 # 生成されたシーケンスの確認
 
@@ -27,7 +28,7 @@ for i in range(20):
     seed.append(np_notes[f'arr_{i}'])
 print(f"seed is {len(seed)} and {seed[1]}")
 
-gene = model.generate(seed[0:10], max_length=10)
+gene = model.generate(seed[0:3], max_length=3)
 
 print(gene)
 

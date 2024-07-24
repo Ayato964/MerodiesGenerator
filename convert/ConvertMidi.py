@@ -1,6 +1,8 @@
 import string
 from abc import abstractmethod
 import os
+
+import music21.midi
 import numpy
 import pretty_midi as midi
 from pretty_midi import PrettyMIDI
@@ -19,7 +21,11 @@ BEGIN_TIME_FEW = 5
 def _get_midi_datasets(directory):
     try:
         return midi.PrettyMIDI(directory)
-    except OSError:
+    except OSError or ValueError:
+        return None
+    except IndexError:
+        return None
+    except ValueError:
         return None
 
 
@@ -76,7 +82,7 @@ class ConvertNumPy:
             correct_inst_count = 0
             for inst in self.midi_data.instruments:
                 before: midi.Note = midi.Note(0, 0, 0, 0)
-                if not inst.is_drum and inst.program in range(1, 10):
+                if not inst.is_drum and (inst.program in range(0, 9) or inst.program == 56 or inst.program in range(64, 69)):
                     correct_inst_count += 1
                     for note in inst.notes:
                         pitch = int(note.pitch)  # 音高
@@ -96,6 +102,11 @@ class ConvertNumPy:
                     np_notes = np.vstack([np_notes, [0, 0, 0, 0, 0, 0, 0]])
             self.np_note = np_notes
             if correct_inst_count <= 0:
+                print("この楽曲には欲しい楽器がありません！！")
+                self.isError = True
+
+            if np.min(np_notes) < 0:
+                print("値の中に0以下の値が格納されていたため、中断します。")
                 self.isError = True
         except AttributeError:
             print("処理を行う過程でエラーが発生しました。")
@@ -120,7 +131,7 @@ class ConvertNumPy:
 
             filename = split_direc[-1].split(".")[0]
 
-            np.savez(out_directory + "/np/" + split_direc[1] + "/" + filename, *self.np_note)
+            np.savez(out_directory + "/np/datasets/" + filename, *self.np_note)
             print("処理が正常に終了しました。")
         else:
             print("Transformerが望むデータ形式ではないため、保存ができませんでした。")
@@ -135,16 +146,15 @@ class ConvertNumPy:
     def get_root_note(self, start: float) -> int:
         bass = self.get_bass()
         if bass is None:
-            self.isError = True
-            return -1
+            #self.isError = True
+            return 99
         else:
             measure = self.get_measure(start)
             for note in bass.notes:
                 if note.start >= self.get_measure_sec() * (measure - 1):
                     return self.get_root_pitch(note.pitch)
-
-            self.isError = True
-            return -1
+            #self.isError = True
+            return 99
 
     def get_bass(self):
         for inst in self.midi_data.instruments:
@@ -166,10 +176,9 @@ class ConvertNumPy:
     def get_begin_time(before: midi.Note, notes: midi.Note) -> float:
         return notes.start - before.start
 
-    @staticmethod
-    def split_float_to_ints(num):
-        if num == -1:
-            return -1
+    def split_float_to_ints(self, num):
+        if num < 0:
+            return -1, -1
         else:
             # 整数部を取得
             integer_part = int(num)
@@ -204,11 +213,11 @@ class _ConvertChangeKey(_AbstractConvert):
         self.conv_key_number = self.get_key_number(conv_key)
 
     def convert(self, directory: str, midi_data: PrettyMIDI):
-        score = m21.converter.parse(directory)
-        key = score.analyze("key").tonic.name
-        now_key_number = self.get_key_number(key)
-        transpose_number = abs(now_key_number - self.conv_key_number)
         try:
+            score = m21.converter.parse(directory)
+            key = score.analyze("key").tonic.name
+            now_key_number = self.get_key_number(key)
+            transpose_number = abs(now_key_number - self.conv_key_number)
             for inst in midi_data.instruments:
                 if not inst.is_drum:
                     for note in inst.notes:
@@ -216,6 +225,15 @@ class _ConvertChangeKey(_AbstractConvert):
         except AttributeError:
             print(f"{directory}が移調できませんでした。")
             self.is_Error = True
+        except music21.midi.MidiException:
+            self.is_Error = True
+            print(f"{directory}が移調できませんでした。")
+        except music21.converter.ConverterFileException:
+            self.is_Error = True
+            print(f"{directory}が移調できませんでした")
+        except music21.exceptions21.StreamException:
+            self.is_Error = True
+            print(f"{directory}が移調できませんでした")
         pass
 
     @staticmethod
