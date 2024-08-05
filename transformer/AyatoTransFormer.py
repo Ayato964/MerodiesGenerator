@@ -1,13 +1,11 @@
 import random
-import time
-
-import numpy
 import torch
 from torch import Tensor
 from torch.utils.data import Dataset, DataLoader
 import torch.nn as nn
 import numpy as np
-
+from .tokenizer import convert_token
+from .tokenizer import Tokenizer
 import constants
 from .PositionalEncoding import PositionalEncoding
 
@@ -25,12 +23,13 @@ def get_device():
 def set_train_data(directory, datasets):
     if not IS_DEBUG:
         print("Generating TrainData.....")
-        t_data = AyatoDataSet()
+        tokenizer = Tokenizer()
+        t_data = AyatoDataSet(tokenizer)
         for dataset in datasets:
             print(directory + dataset)
             np_load_data = np.load(directory + dataset)
-            train_data = np.array([[0, 0, 0, 0, 0, 0, 0]])
-            train_next_data = np.array([[0, 0, 0, 0, 0, 0, 0]])
+            train_data = np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0]])
+            train_next_data = np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0]])
             for i in range(len(np_load_data) - 1):
                 np_data = np.expand_dims(np_load_data[f'arr_{i}'], axis=0)
                 np_next_data = np.expand_dims(np_load_data[f'arr_{i + 1}'], axis=0)
@@ -39,40 +38,23 @@ def set_train_data(directory, datasets):
                 train_next_data = np.concatenate((train_next_data, np_next_data), axis=0)
 
             t_data.add_data(train_data[1:].tolist(), train_next_data[1:].tolist())
-        print(f"Token size: {sum(len(sub) for sub in t_data.data)}")
-        return t_data
+        print(f"Token size: {sum(len(sub) for sub in t_data.musics_seq)}   Vocab size is : {tokenizer.vocab_size}")
+        print("----------------------------------")
+        print("Generate Padding...")
+        t_data.set_padding()
+
+        return t_data, tokenizer
     else:
         np_load_data = np.load(directory + datasets[0])
         print(np_load_data[f'arr_{3}'])
     return None
 
 
-def get_none_seq(seq) -> int:
-    for c in range(len(seq)):
-        if c != 0 and torch.all(seq[c] == 0):
-            return c
-
-
-def pad_sequences(sequences, pad_value=0):
-    max_len = max(len(seq) for seq in sequences)
-    padded_sequences = [torch.cat((seq, torch.full((max_len - len(seq), seq.shape[1]), pad_value, dtype=seq.dtype))) if len(seq) < max_len else seq for seq in sequences]
-    return torch.stack(padded_sequences)
-
-
-def collate_fn(batch):
-    sequences, targets = zip(*batch)
-    sequences = [torch.tensor(seq, dtype=torch.long) for seq in sequences]
-    targets = [torch.tensor(tgt, dtype=torch.long) for tgt in targets]
-    padded_sequences = pad_sequences(sequences)
-    padded_targets = pad_sequences(targets)
-    return padded_sequences, padded_targets
-
-
-def train(ayato_dataset, num_epochs, trans_layer=6, num_heads=8, d_model=512, dim_feedforward=1024, dropout=0.1,
+def train(ayato_dataset, vocab_size: int, num_epochs: int, trans_layer=6, num_heads=8, d_model=512, dim_feedforward=1024, dropout=0.1,
           position_length=2048):
-    loader = DataLoader(ayato_dataset, batch_size=64, shuffle=True, pin_memory=False, collate_fn=collate_fn)
+    loader = DataLoader(ayato_dataset, batch_size=64, shuffle=True, pin_memory=False)
     print("Creating Model....")
-    model = AyatoModel(trans_layer=trans_layer, num_heads=num_heads,
+    model = AyatoModel(vocab_size=vocab_size, trans_layer=trans_layer, num_heads=num_heads,
                        d_model=d_model, dim_feedforward=dim_feedforward,
                        dropout=dropout, position_length=position_length).to(device)
 
@@ -117,7 +99,7 @@ device = get_device()
 
 
 class AyatoModel(nn.Module):
-    def __init__(self, trans_layer=6, num_heads=8, d_model=512, dim_feedforward=1024, dropout=0.1,
+    def __init__(self, vocab_size, trans_layer=6, num_heads=8, d_model=512, dim_feedforward=1024, dropout=0.1,
                  position_length=2048):
         super(AyatoModel, self).__init__()
 
@@ -135,42 +117,29 @@ class AyatoModel(nn.Module):
                                                           custom_decoder=DummyDecoder(),
                                                           dropout=self.dropout, dim_feedforward=dim_feedforward,
                                                           ).to(device)
+        print(vocab_size)
+        self.Wout = nn.Linear(self.d_model, vocab_size).to(device)
 
-        self.Wout = nn.Linear(self.d_model, constants.VOCAB_SIZE).to(device)
-
-        self.embedding: nn.Embedding = nn.Embedding(constants.VOCAB_SIZE, self.d_model).to(device)
+        self.embedding: nn.Embedding = nn.Embedding(vocab_size, self.d_model).to(device)
 
         self.softmax: nn.Softmax = nn.Softmax(dim=-1).to(device)
 
-    def forward(self, inputs, tgt=None):
-        mask = self.transformer.generate_square_subsequent_mask(inputs.shape[1]).to(get_device())
+    def forward(self, inputs_seq, tgt_seq, input_mask, tgt_mask, padding_mask):
 
-        inputs_em: nn.Embedding = self.embedding(inputs)
+        inputs_em: nn.Embedding = self.embedding(inputs_seq)
+        inputs_em.permute(1, 0, 2)
+        inputs_pos: PositionalEncoding = self.positional(inputs_em)
 
-        #print(f"inputs EM: {inputs_em.shape}")
-
-        inputs_em = inputs_em.permute(1, 0, 2)
-
-        #print(f"inputs EM Permute: {inputs_em.shape}")
-
-        inputs_pos = self.positional(inputs_em)
-
-
-        #print(f"positional inputs: {inputs_em.shape}")
-
-        if tgt is not None:
-            tgt_mask = self.transformer.generate_square_subsequent_mask(tgt.shape[1]).to(get_device())
-            tgt_em: nn.Embedding = self.embedding(tgt)
-            tgt_em = tgt_em.permute(1, 0, 2)
-            tgt_pos = self.positional(tgt_em)
-        else:
-            tgt_mask = mask
+        if tgt_seq is None:
             tgt_pos = inputs_pos
+        else:
+            tgt_em: nn.Embedding = self.embedding(tgt_seq)
+            tgt_em.permute(1, 0, 2)
+            tgt_pos: PositionalEncoding = self.positional(tgt_em)
 
-        outputs = self.transformer(src=inputs_pos, tgt=tgt_pos, src_mask=mask, tgt_mask=tgt_mask)
-        outputs = outputs.permute(1, 0, 2)
-        score = self.Wout(outputs)
-
+        out: Tensor = self.transformer(inputs_pos, tgt_pos, input_mask, tgt_mask,
+                                       src_key_padding_mask=padding_mask, tgt_key_padding_mask=padding_mask)
+        score = self.Wout(out)
         return score
 
     def generate(self, input_seq, max_length=50):
@@ -199,35 +168,53 @@ class AyatoModel(nn.Module):
 
 
 class AyatoDataSet(Dataset):
-    def __init__(self):
-        self.data = None
-        self.tgt_data = None
+    def __init__(self, tokenizer: Tokenizer):
+        self.musics_seq = None
+        self.tgt_seq = None
+        self.tokenizer = tokenizer
 
     def __len__(self):
-        return len(self.data)
+        return len(self.musics_seq)
 
     def __getitem__(self, item):
-        #print(f"out:{self._get_shape(self.data[item])}")
-        return self.data[item], self.tgt_data[item]
+        return self.musics_seq[item], self.tgt_seq[item]
 
     def add_data(self, music_seq, tgt_seq):
-        new_music_seq = [music_seq]
-        new_tgt_seq = [tgt_seq]
-        if self.data is None:
-            self.data = new_music_seq
-            self.tgt_data = new_tgt_seq
-        else:
-            new_array = self.data + new_music_seq
-            self.data = new_array
 
-            new_tgt_array = self.tgt_data + new_tgt_seq
-            self.tgt_data = new_tgt_array
-        print(self._get_shape(self.data[-1]), len(self.data))
+        if self.musics_seq is None and self.tgt_seq is None:
+            self.musics_seq = [convert_token(music_seq, self.tokenizer)]
+            self.tgt_seq = [convert_token(tgt_seq, self.tokenizer)]
+        else:
+            self.musics_seq = self.musics_seq + [convert_token(music_seq, self.tokenizer)]
+            self.tgt_seq = self.tgt_seq + [convert_token(tgt_seq, self.tokenizer)]
+
+        print(self._get_shape(self.musics_seq), self._get_shape(self.tgt_seq))
+        print(self.musics_seq[-1][5])
+        pass
 
     def _get_shape(self, lst):
         if isinstance(lst, list):
             return [len(lst)] + self._get_shape(lst[0]) if lst else []
         return []
+
+    def set_padding(self):
+        self._padding(self.tgt_seq)
+        self._padding(self.musics_seq)
+
+        print(self._get_shape(self.musics_seq[-1]), self._get_shape(self.musics_seq[0]), self._get_shape(self.tgt_seq[-1]))
+        pass
+
+    def _padding(self, target: list):
+        max_lengths = []
+        for t in target:
+            max_lengths.append(len(t))
+        max_length = max(max_lengths)
+
+        for t in target:
+            if len(t) < max_length:
+                for _ in range(max_length - len(t)):
+                    t.append(self.tokenizer.get(constants.PADDING_TOKEN))
+        pass
 
 
 class DummyDecoder(nn.Module):

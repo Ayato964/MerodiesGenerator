@@ -17,9 +17,9 @@ print(f"ToDay is{datetime.date.today()}! start generating AyatoModel.{model_vers
 #directory = "out/np/test/"
 directory = "out/np/datasets/"
 datasets = os.listdir(directory)
-train_data = atf.set_train_data(directory, datasets)  # 前処理されたデータをTransformerのデータセットクラスに変換する
+train_data, tokenizer = atf.set_train_data(directory, datasets)  # 前処理されたデータをTransformerのデータセットクラスに変換する
 
-model, loss = atf.train(train_data, 30,
+model, loss = atf.train(train_data, tokenizer.vocab_size, 30,
                         d_model=32,
                         dim_feedforward=512,
                         trans_layer=3,
@@ -28,5 +28,8 @@ model, loss = atf.train(train_data, 30,
                         )  # 20エポック分機械学習を行う。
 
 torch.save(model.state_dict(), f"out/model/AyatoModel.{model_version}_{loss}.pth")  # できたモデルをセーブする
+
+tokenizer.save()
+
 
 

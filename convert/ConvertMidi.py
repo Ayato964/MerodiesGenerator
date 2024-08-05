@@ -77,13 +77,14 @@ class ConvertNumPy:
         else:
             print("エラーが発生し、読み込めません。")
 
-        np_notes = np.array([[0, 0, 0, 0, 0, 0, 0]])
+        np_notes = np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0]])
         try:
             correct_inst_count = 0
             for inst in self.midi_data.instruments:
                 before: midi.Note = midi.Note(0, 0, 0, 0)
                 if not inst.is_drum and (inst.program in range(0, 9) or inst.program == 56 or inst.program in range(64, 69)):
                     correct_inst_count += 1
+                    np_notes = np.vstack([np_notes, [0, 0, 0, 0, 0, 0, 0, 0, 0]])
                     for note in inst.notes:
                         pitch = int(note.pitch)  # 音高
 
@@ -99,22 +100,22 @@ class ConvertNumPy:
                         np_notes = np.vstack([np_notes, [int(pitch), int(velocity), duration_int, duration_few,
                                                          begin_time_int, begin_time_few, root_note]])
                         before = note  # 次のループまでnoteを保持
-                    np_notes = np.vstack([np_notes, [0, 0, 0, 0, 0, 0, 0]])
+                    np_notes = np.vstack([np_notes, [0, 0, 0, 0, 0, 0, 0, 0, 0]])
             self.np_note = np_notes
             if correct_inst_count <= 0:
-                print("この楽曲には欲しい楽器がありません！！")
+                print(f"{self.directory}には欲しい楽器がありません！！")
                 self.isError = True
 
             if np.min(np_notes) < 0:
-                print("値の中に0以下の値が格納されていたため、中断します。")
+                print(f"{self.directory}の値の中に0以下の値が格納されていたため、中断します。")
                 self.isError = True
         except AttributeError:
             print("処理を行う過程でエラーが発生しました。")
-            self.np_note = np.array([[-1, -1, -1, -1, -1, -1, -1]])
+            self.np_note = np.array([[-1, -1, -1, -1, -1, -1, -1, -1, -1]])
             self.isError = True
         except TypeError:
             print("処理を行う過程でエラーが発生しました。")
-            self.np_note = np.array([[-1, -1, -1, -1, -1, -1, -1]])
+            self.np_note = np.array([[-1, -1, -1, -1, -1, -1, -1, -1, -1]])
             self.isError = True
 
     def save(self):
