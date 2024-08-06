@@ -9,6 +9,7 @@ from pretty_midi import PrettyMIDI
 import music21 as m21
 import numpy as np
 from util.ArrayList import ArrayList
+from AGSM.convert import ConvTempo
 
 PITCH = 0
 VELOCITY = 1
@@ -70,7 +71,7 @@ class ConvertNumPy:
 
         pass
 
-    # [音高, 強さ, 長さ(整数), 長さ(小数点以下),  前のノーツからの開始時間（整数）,　前のノーツからの開始時間(少数以下), 泊のタイミング(4泊), 泊のタイミング(8泊), ルート音]
+    # [音高, 強さ,　始まり(4分), 始まり(8分),　始まり(16),　終わり(4分), 終わり(8分),　終わり(16),  ルート音]
     def convert(self):
         if not self.isError:
             self.conv.convert(self.directory, self.midi_data)
@@ -81,7 +82,6 @@ class ConvertNumPy:
         try:
             correct_inst_count = 0
             for inst in self.midi_data.instruments:
-                before: midi.Note = midi.Note(0, 0, 0, 0)
                 if not inst.is_drum and (inst.program in range(0, 9) or inst.program == 56 or inst.program in range(64, 69)):
                     correct_inst_count += 1
                     np_notes = np.vstack([np_notes, [0, 0, 0, 0, 0, 0, 0, 0, 0]])
@@ -90,16 +90,11 @@ class ConvertNumPy:
 
                         velocity = int(note.velocity)  # 強さ
 
-                        duration_int, duration_few = self.split_float_to_ints(note.get_duration())  # 長さ
 
-                        begin_time_int, begin_time_few = \
-                            self.split_float_to_ints(self.get_begin_time(before, note))  # 前のノーツからの開始時間
 
-                        root_note = self.get_root_note(note.start)
+#                        np_notes = np.vstack([np_notes, [int(pitch), int(velocity), duration_int, duration_few,
+#                                                         begin_time_int, begin_time_few, root_note]])
 
-                        np_notes = np.vstack([np_notes, [int(pitch), int(velocity), duration_int, duration_few,
-                                                         begin_time_int, begin_time_few, root_note]])
-                        before = note  # 次のループまでnoteを保持
                     np_notes = np.vstack([np_notes, [0, 0, 0, 0, 0, 0, 0, 0, 0]])
             self.np_note = np_notes
             if correct_inst_count <= 0:
@@ -136,9 +131,6 @@ class ConvertNumPy:
             print("処理が正常に終了しました。")
         else:
             print("Transformerが望むデータ形式ではないため、保存ができませんでした。")
-
-    def get_np_notes(self):
-        return self.np_note
 
     @staticmethod
     def get_root_pitch(pitch):

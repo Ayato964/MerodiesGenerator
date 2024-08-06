@@ -19,11 +19,11 @@ directory = "out/np/datasets/"
 datasets = os.listdir(directory)
 train_data, tokenizer = atf.set_train_data(directory, datasets)  # 前処理されたデータをTransformerのデータセットクラスに変換する
 
-model, loss = atf.train(train_data, tokenizer.vocab_size, 30,
-                        d_model=32,
-                        dim_feedforward=512,
+model, loss = atf.train(train_data, tokenizer.vocab_size, 10,
+                        d_model=512,
+                        dim_feedforward=4700,
                         trans_layer=3,
-                        position_length=512,
+                        position_length=4700,
                         dropout=0.4
                         )  # 20エポック分機械学習を行う。
 

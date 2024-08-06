@@ -4,12 +4,17 @@ import constants
 
 
 class Tokenizer:
-    def __init__(self, load_data=None):
-        self.vocab_size = 3
-        self.tokens = dict()
-        self.tokens[constants.PADDING_TOKEN] = 0
-        self.tokens[constants.START_SEQ_TOKEN] = 1
-        self.tokens[constants.END_SEQ_TOKEN] = 2
+    def __init__(self, load_data: str = None):
+        if load_data is None:
+            self.vocab_size = 3
+            self.tokens: dict = dict()
+            self.tokens[constants.PADDING_TOKEN] = 0
+            self.tokens[constants.START_SEQ_TOKEN] = 1
+            self.tokens[constants.END_SEQ_TOKEN] = 2
+        else:
+            with open(load_data, 'r') as file:
+                self.tokens: dict = json.load(file)
+            self.vocab_size = len(self.tokens)
 
     def get(self, a: str) -> int:
         if a in self.tokens:

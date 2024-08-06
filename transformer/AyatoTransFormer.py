@@ -50,9 +50,26 @@ def set_train_data(directory, datasets):
     return None
 
 
+def get_padding_mask(input_ids):
+    pad_id = None
+    for inputs in input_ids:
+        pad = []
+        for token in inputs:
+            if token == 0:
+                pad.append(0)
+            else:
+                pad.append(1)
+        if pad_id is None:
+            pad_id = [pad]
+        else:
+            pad_id = pad_id + [pad]
+    padding_mask = torch.tensor(pad_id, dtype=torch.float).to(device)
+    return padding_mask
+
+
 def train(ayato_dataset, vocab_size: int, num_epochs: int, trans_layer=6, num_heads=8, d_model=512, dim_feedforward=1024, dropout=0.1,
           position_length=2048):
-    loader = DataLoader(ayato_dataset, batch_size=64, shuffle=True, pin_memory=False)
+    loader = DataLoader(ayato_dataset, batch_size=4, shuffle=False, pin_memory=False)
     print("Creating Model....")
     model = AyatoModel(vocab_size=vocab_size, trans_layer=trans_layer, num_heads=num_heads,
                        d_model=d_model, dim_feedforward=dim_feedforward,
@@ -70,25 +87,27 @@ def train(ayato_dataset, vocab_size: int, num_epochs: int, trans_layer=6, num_he
         epoch_loss = 0.0
 
         model.train()
-        for seq, tgt in loader: # seqにはbatch_size分の楽曲が入っている
-            for i in range(len(seq)): #１曲を取り出す
-                tune = seq[i].to(device)
-                tgt_tune = tgt[i].to(device)
+        for input_ids, targets in loader: # seqにはbatch_size分の楽曲が入っている
+            print(f"learning sequence {count + 1}")
+            input_ids.to(device)
+            input_ids.to(device)
 
-                output = model(tune[1:])
+            optimizer.zero_grad()
+            inputs_mask = model.transformer.generate_square_subsequent_mask(input_ids.shape[1]).to(device)
+            targets_mask = model.transformer.generate_square_subsequent_mask(targets.shape[1]).to(device)
+            padding_mask_in: Tensor = get_padding_mask(input_ids)
+            padding_mask_tgt: Tensor = get_padding_mask(targets)
 
-                # 出力とターゲットの形状を一致させるためにリシェイプ
-                output = output.view(-1, output.size(-1))
-                tgt_tune = tgt_tune[1:].view(-1)
+            output = model(input_ids, targets, inputs_mask, targets_mask, padding_mask_in, padding_mask_tgt)
 
-                # 損失計算
-                loss = criterion(output, tgt_tune)
-                loss.backward()
-                optimizer.step()
-                optimizer.zero_grad()
+            outputs = output.view(-1, output.size(-1))
+            targets = targets.view(-1).long()
 
-                count += 1
-                epoch_loss += loss.item()
+            loss = criterion(outputs, targets)  # 損失を計算
+            loss.backward()  # 逆伝播
+            optimizer.step()  # オプティマイザを更新
+            epoch_loss = loss
+            count += 1
 
         print(f"Epoch [{epoch + 1}/{num_epochs}],  Loss: {epoch_loss / count:.4f}")
         loss_val = epoch_loss / count
@@ -117,41 +136,44 @@ class AyatoModel(nn.Module):
                                                           custom_decoder=DummyDecoder(),
                                                           dropout=self.dropout, dim_feedforward=dim_feedforward,
                                                           ).to(device)
-        print(vocab_size)
+        print(f"Input Vocab Size:{vocab_size}")
         self.Wout = nn.Linear(self.d_model, vocab_size).to(device)
 
         self.embedding: nn.Embedding = nn.Embedding(vocab_size, self.d_model).to(device)
 
         self.softmax: nn.Softmax = nn.Softmax(dim=-1).to(device)
 
-    def forward(self, inputs_seq, tgt_seq, input_mask, tgt_mask, padding_mask):
+    def forward(self, inputs_seq, tgt_seq, input_mask, tgt_mask, input_padding_mask, tgt_padding_mask):
 
-        inputs_em: nn.Embedding = self.embedding(inputs_seq)
-        inputs_em.permute(1, 0, 2)
-        inputs_pos: PositionalEncoding = self.positional(inputs_em)
+        inputs_em: Tensor = self.embedding(inputs_seq)
+        inputs_em = inputs_em.permute(1, 0, 2)
+        inputs_pos: Tensor = self.positional(inputs_em)
 
         if tgt_seq is None:
             tgt_pos = inputs_pos
         else:
-            tgt_em: nn.Embedding = self.embedding(tgt_seq)
-            tgt_em.permute(1, 0, 2)
-            tgt_pos: PositionalEncoding = self.positional(tgt_em)
+            tgt_em: Tensor = self.embedding(tgt_seq)
+            tgt_em = tgt_em.permute(1, 0, 2)
+            tgt_pos: Tensor = self.positional(tgt_em)
 
+        #print(inputs_pos.shape, tgt_pos.shape)
         out: Tensor = self.transformer(inputs_pos, tgt_pos, input_mask, tgt_mask,
-                                       src_key_padding_mask=padding_mask, tgt_key_padding_mask=padding_mask)
+                                       src_key_padding_mask=input_padding_mask, tgt_key_padding_mask=tgt_padding_mask)
+
+        out.permute(1, 0, 2)
+
         score = self.Wout(out)
         return score
 
     def generate(self, input_seq, max_length=50):
         self.eval()
         generated_seq = torch.tensor(input_seq, dtype=torch.long).to(device)
-
         print(f"first{generated_seq}")
 
         with torch.set_grad_enabled(False):
             for i in range(max_length):
                 rand = random.randint(0, 100)
-                score: torch.Tensor = self.softmax(self(generated_seq))
+                score: torch.Tensor = self.softmax(self(generated_seq, None))
                 print(score.shape)
                 next_token_score: torch.Tensor = score[-1, :, :]
                 next_token_score.flatten()
@@ -177,7 +199,7 @@ class AyatoDataSet(Dataset):
         return len(self.musics_seq)
 
     def __getitem__(self, item):
-        return self.musics_seq[item], self.tgt_seq[item]
+        return torch.tensor(self.musics_seq[item], dtype=torch.int).to(device), torch.tensor(self.tgt_seq[item], dtype=torch.int).to(device)
 
     def add_data(self, music_seq, tgt_seq):
 
@@ -201,7 +223,6 @@ class AyatoDataSet(Dataset):
         self._padding(self.tgt_seq)
         self._padding(self.musics_seq)
 
-        print(self._get_shape(self.musics_seq[-1]), self._get_shape(self.musics_seq[0]), self._get_shape(self.tgt_seq[-1]))
         pass
 
     def _padding(self, target: list):
@@ -209,7 +230,7 @@ class AyatoDataSet(Dataset):
         for t in target:
             max_lengths.append(len(t))
         max_length = max(max_lengths)
-
+        print(f"Max length is {max_length}")
         for t in target:
             if len(t) < max_length:
                 for _ in range(max_length - len(t)):
